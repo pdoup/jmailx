@@ -44,7 +44,7 @@ E.g. Issue the following command to fetch the latest 10 e-mails:
 ### Reading E-mails with custom filters
 E-mail filtering is also available through a custom filtering interface. The full list of filtering option is available at [?].
 
-E.g. Issue the following command to filter any e-mails received from `example@mail.com` and these e-mails were sent after `2023-10-01 10:00:00` or subject contains the phrase `'hello'`:
+E.g. Issue the following command to filter any e-mails sent from `example@mail.com` and these e-mails were sent after `2023-10-01 10:00:00` or subject contains the phrase `'hello'`:
 
 ```$ java -jar mailapp-0.1.jar -f 'from:example@mail.com+sent_after:2023-10-01T10.00.00|subject:hello'```
 ***
