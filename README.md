@@ -1,5 +1,5 @@
 # jmail
-## CLI application for basic e-mail management in Java
+# CLI application for basic e-mail management in Java
 
 ## Usage
 
