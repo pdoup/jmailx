@@ -10,7 +10,7 @@ The JAR file packages all the requirements in a single executable (Java version 
 - The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration properties and must be in the same location as the entry-point JAR file. The properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*).
 
 Example: ```$ java -jar mailapp-0.1.jar --help```
-```sh
+```terminal
 Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-r <arg>] [-l <arg>]
        [-h]
 
