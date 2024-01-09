@@ -48,6 +48,14 @@ E.g. Issue the following command to filter any e-mails sent from `example@mail.c
 
 ```$ java -jar mailapp-0.1.jar -f 'from:example@mail.com+sent_after:2023-10-01T10.00.00|subject:hello'```
 ***
+
+## Build from scratch
+You can also build this project from scratch with the provided [build.gradle](build.gradle) file as follows:
+
+```sh
+$ gradle clean build --no-daemon
+```
+***
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
