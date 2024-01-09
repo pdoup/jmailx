@@ -1,7 +1,7 @@
 # jmail
 ## CLI application for basic e-mail management in Java
 
-### Usage
+## Usage
 
 The JAR file packages all the requirements in a single executable (Java version **1.8 or greater** is required).
 
