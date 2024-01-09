@@ -28,26 +28,26 @@ Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-r 
 
 Version: 0.1
 ```
-
+***
 ### Sending an E-mail
 Issue the following command to send an email to `test@mail.com` with `subject="Hello"` and `message="World"`
 
 ```$ java -jar mailapp-0.1.jar -r test@mail.com -s 'Hello' -m 'World'```
-
+***
 ### Reading E-mails
 Retrieving and displaying e-mails from a folder can be done with the following command:
 
 E.g. Issue the following command to fetch the latest 10 e-mails:
 
 ```$ java -jar mailapp-0.1.jar -l 10```
-
-### Reading E-mails with a custom filter
+***
+### Reading E-mails with custom filters
 E-mail filtering is also available through a custom filtering interface. The full list of filtering option is available at [?].
 
 E.g. Issue the following command to filter any e-mails received from `example@mail.com` and these e-mails were sent after `2023-10-01 10:00:00` or subject contains the phrase `'hello'`:
 
 ```$ java -jar mailapp-0.1.jar -f 'from:example@mail.com+sent_after:2023-10-01T10.00.00|subject:hello'```
-
+***
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
