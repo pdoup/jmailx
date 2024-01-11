@@ -4,6 +4,8 @@ package iti.mail;
 import static org.jsoup.Jsoup.*;
 
 import org.apache.commons.cli.*;
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.ArrayUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -22,6 +24,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -137,8 +140,9 @@ class MailClient {
             e.printStackTrace();
         }
 
+        final InternetAddress[] recipients = InternetAddress.parse(recipient);
         try {
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(recipient));
+            message.setRecipients(Message.RecipientType.TO, recipients);
         } catch (NullPointerException npe) {
             throw new AddressException("`To` address field cannot be empty");
         }
@@ -177,7 +181,14 @@ class MailClient {
         ZonedDateTime now = ZonedDateTime.now(ZoneId.systemDefault());
         DateTimeFormatter formatter = DateTimeFormatter.ISO_ZONED_DATE_TIME;
 
-        System.out.println("==> Mail sent to (" + recipient + ") at " + now.format(formatter));
+        System.out.println(
+                "==> Mail sent to "
+                        + Arrays.stream(recipients)
+                                .map(InternetAddress::getAddress)
+                                .map(addr -> "<" + addr + ">")
+                                .collect(Collectors.joining(" "))
+                        + " at "
+                        + now.format(formatter));
     }
 
     /**
@@ -185,12 +196,20 @@ class MailClient {
      *
      * @param maxMessages the maximum number of messages to read
      * @param saveAttachments downloads any attachments found
+     * @param reverseOrder list messages in reverse chronological order
+     * @param reverseSearch search messages in reverse chronological order
+     * @param folder the name of the folder to open
      * @throws MessagingException if a messaging error occurs
      * @throws IOException if an I/O error occurs
      */
-    public void read(final int maxMessages, final boolean saveAttachments)
+    public void read(
+            final int maxMessages,
+            final boolean saveAttachments,
+            final boolean reverseOrder,
+            final boolean reverseSearch,
+            final String folder)
             throws MessagingException, IOException {
-        read(null, maxMessages, saveAttachments);
+        read(null, maxMessages, saveAttachments, reverseOrder, reverseSearch, folder);
     }
 
     /**
@@ -199,100 +218,197 @@ class MailClient {
      * @param filter the messages to read
      * @param maxMessages the maximum number of messages to read
      * @param saveAttachments downloads any attachments found
+     * @param reverseOrder list messages in reverse chronological order
+     * @param reverseSearch search messages in reverse chronological order
+     * @param folder the name of the folder to open
      * @throws MessagingException if a messaging error occurs
      * @throws IOException if an I/O error occurs
      */
-    public void read(final String filter, final int maxMessages, final boolean saveAttachments)
+    public void read(
+            final String filter,
+            final int maxMessages,
+            final boolean saveAttachments,
+            final boolean reverseOrder,
+            final boolean reverseSearch,
+            final String folder)
             throws MessagingException, IOException {
+        final String ANSI_RESET = "\u001B[0m";
+        final String ANSI_UNDERLINE = "\u001B[4m";
+
         final Store store = session.getStore(this.prop.getProperty("mail.proto.store_type"));
         store.connect();
 
-        final Folder inbox = store.getFolder(this.prop.getProperty("mail.proto.inbox_name"));
-        inbox.open(Folder.READ_ONLY);
+        final String folderName =
+                folder == null ? this.prop.getProperty("mail.proto.inbox_name") : folder.trim();
+        final Folder inbox = store.getFolder(folderName);
+
+        try {
+            inbox.open(Folder.READ_ONLY);
+        } catch (FolderNotFoundException fnf) {
+            System.out.println(
+                    "==> Folder \""
+                            + fnf.getFolder().getName()
+                            + "\" not found in store ("
+                            + fnf.getFolder().getURLName()
+                            + ")");
+            store.close();
+            return;
+        }
 
         final int maxMessagesParsed = maxMessages > 0 ? maxMessages : Integer.MAX_VALUE;
         final int messageCount = inbox.getMessageCount();
 
-        final int start = Math.max(1, messageCount - maxMessagesParsed + 1);
-        final int end = messageCount;
+        final int start = reverseSearch ? 1 : Math.max(1, messageCount - maxMessagesParsed + 1);
+        final int end = reverseSearch ? Math.min(messageCount, maxMessagesParsed) : messageCount;
 
-        System.out.println("==> Found " + messageCount + " mail(s)");
+        System.out.println(
+                "==> Found "
+                        + messageCount
+                        + " mail(s)"
+                        + " in '"
+                        + inbox.getName()
+                        + "' folder ("
+                        + inbox.getUnreadMessageCount()
+                        + " unread)");
 
         int limit;
         Message[] messages = null;
 
         if (filter != null) {
             messages = inbox.search(MailFilter.parse(filter));
-            final int searchLength = messages.length;
+            final int searchSize = messages.length;
             limit = Math.min(maxMessagesParsed, messages.length);
             if (limit == maxMessagesParsed) {
-                messages = Arrays.copyOfRange(messages, messages.length - limit, messages.length);
+                if (reverseSearch) {
+                    messages = Arrays.copyOfRange(messages, 0, limit);
+                } else {
+                    messages =
+                            Arrays.copyOfRange(messages, messages.length - limit, messages.length);
+                }
             }
-
-            System.out.println("==> Found " + searchLength + " mail(s) matching the criteria");
-            System.out.println("==> Fetching latest " + limit + " mail(s)");
+            System.out.println("==> Found " + searchSize + " mail(s) matching the criteria");
+            System.out.println(
+                    "==> Fetching "
+                            + (reverseSearch ? "oldest" : "latest")
+                            + " "
+                            + limit
+                            + " mail(s)");
         } else {
             messages = inbox.getMessages(start, end);
             limit = messages.length;
-            System.out.println("==> Fetching latest " + (end - start + 1) + " mail(s)");
+            System.out.println(
+                    "==> Fetching "
+                            + (reverseSearch ? "oldest" : "latest")
+                            + " "
+                            + (end - start + 1)
+                            + " mail(s)");
         }
 
         if (messages.length == 0 || messages == null) {
-            inbox.close(false);
+            if (inbox.isOpen()) {
+                inbox.close(false);
+            }
             store.close();
-            System.exit(0);
+            return;
+        } else if (reverseOrder) {
+            ArrayUtils.reverse(messages);
+        } else {
+            ;
         }
 
         for (int i = limit - 1; i >= 0; i--) {
             Message message = messages[i];
             System.out.println(
                     "------------------------------------------------------------------");
-            System.out.println("Email Number: " + (start + i));
-            System.out.println(
-                    "Size: "
-                            + String.format(
-                                    "%.1f %s",
-                                    message.getSize() >= 1024 * 1024
-                                            ? (double) message.getSize() / (1024 * 1024)
-                                            : (double) message.getSize() / 1024,
-                                    message.getSize() >= 1024 * 1024 ? "MB" : "kB"));
-            System.out.println("Subject: " + message.getSubject());
-            System.out.println(
-                    "Sent: "
-                            + new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss Z")
-                                    .format(message.getSentDate()));
-            System.out.println(
-                    "From: "
-                            + Arrays.stream(message.getFrom())
-                                    .map(Address::toString)
-                                    .collect(Collectors.joining(", ")));
-            System.out.println(
-                    "To: "
-                            + (message.getRecipients(Message.RecipientType.TO) != null
-                                    ? Arrays.stream(message.getRecipients(Message.RecipientType.TO))
-                                            .map(Address::toString)
-                                            .map(addr -> "<" + addr + ">")
-                                            .collect(Collectors.joining(" "))
-                                    : "<"
-                                            + this.username
-                                            + "@"
-                                            + this.prop.getProperty("mail.proto.domain")
-                                            + ">"));
+            System.out.printf("%16s: %d%n", ANSI_UNDERLINE + "Email No" + ANSI_RESET, limit - i);
+            System.out.printf(
+                    "%16s: %.1f %s%n",
+                    ANSI_UNDERLINE + "Size" + ANSI_RESET,
+                    message.getSize() >= 1024 * 1024
+                            ? (double) message.getSize() / (1024 * 1024)
+                            : (double) message.getSize() / 1024,
+                    message.getSize() >= 1024 * 1024 ? "MB" : "kB");
+            System.out.printf(
+                    "%16s: %s%n", ANSI_UNDERLINE + "Subject" + ANSI_RESET, message.getSubject());
+            System.out.printf(
+                    "%16s: %s%n",
+                    ANSI_UNDERLINE + "Sent" + ANSI_RESET,
+                    new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss Z", Locale.getDefault())
+                            .format(message.getSentDate()));
+
+            System.out.printf(
+                    "%16s: %s%n",
+                    ANSI_UNDERLINE + "From" + ANSI_RESET,
+                    Arrays.stream(message.getFrom())
+                            .map(InternetAddress.class::cast)
+                            .map(
+                                    addr ->
+                                            addr.getPersonal() != null
+                                                    ? "<\""
+                                                            + addr.getPersonal()
+                                                            + "\" <"
+                                                            + addr.getAddress()
+                                                            + ">>"
+                                                    : "<" + addr.getAddress() + ">")
+                            .collect(Collectors.joining(" ")));
+
+            System.out.printf(
+                    "%16s: %s%n",
+                    ANSI_UNDERLINE + "To" + ANSI_RESET,
+                    (message.getRecipients(Message.RecipientType.TO) != null
+                            ? Arrays.stream(message.getRecipients(Message.RecipientType.TO))
+                                    .map(InternetAddress.class::cast)
+                                    .map(
+                                            addr ->
+                                                    addr.getPersonal() != null
+                                                            ? "<\""
+                                                                    + addr.getPersonal()
+                                                                    + "\" <"
+                                                                    + addr.getAddress()
+                                                                    + ">>"
+                                                            : "<" + addr.getAddress() + ">")
+                                    .collect(Collectors.joining(" "))
+                            : "<\""
+                                    + this.prop.getProperty("mail.proto.name")
+                                    + "\" <"
+                                    + this.username
+                                    + "@"
+                                    + this.prop.getProperty("mail.proto.domain")
+                                    + ">>"));
 
             if (message.getRecipients(Message.RecipientType.CC) != null) {
-                System.out.println(
-                        "Cc: "
-                                + Arrays.stream(message.getRecipients(Message.RecipientType.CC))
-                                        .map(Address::toString)
-                                        .map(addr -> "<" + addr + ">")
-                                        .collect(Collectors.joining(" ")));
+                System.out.printf(
+                        "%16s: %s%n",
+                        ANSI_UNDERLINE + "Cc" + ANSI_RESET,
+                        Arrays.stream(message.getRecipients(Message.RecipientType.CC))
+                                .map(InternetAddress.class::cast)
+                                .map(
+                                        addr ->
+                                                addr.getPersonal() != null
+                                                        ? "<\""
+                                                                + addr.getPersonal()
+                                                                + "\" <"
+                                                                + addr.getAddress()
+                                                                + ">>"
+                                                        : "<" + addr.getAddress() + ">")
+                                .collect(Collectors.joining(" ")));
             }
 
-            System.out.println(
-                    "Reply To: "
-                            + Arrays.stream(message.getReplyTo())
-                                    .map(Address::toString)
-                                    .collect(Collectors.joining(", ")));
+            System.out.printf(
+                    "%16s: %s%n",
+                    ANSI_UNDERLINE + "Reply To" + ANSI_RESET,
+                    Arrays.stream(message.getReplyTo())
+                            .map(InternetAddress.class::cast)
+                            .map(
+                                    addr ->
+                                            addr.getPersonal() != null
+                                                    ? "<\""
+                                                            + addr.getPersonal()
+                                                            + "\" <"
+                                                            + addr.getAddress()
+                                                            + ">>"
+                                                    : "<" + addr.getAddress() + ">")
+                            .collect(Collectors.joining(" ")));
 
             System.out.println(
                     "------------------------------------------------------------------");
@@ -325,13 +441,21 @@ class MailClient {
                     } else if (bodyPart.isMimeType("text/html")) {
                         final String htmlContent = parse(bodyPart.getContent().toString()).text();
                         System.out.println("Content: " + htmlContent);
-                    } else if (bodyPart.isMimeType("application/*")) {
+                    } else if (bodyPart.isMimeType("application/*")
+                            || bodyPart.isMimeType("image/*")) {
                         System.out.println(
                                 "Content: "
                                         + bodyPart.getContentType()
                                         + " ("
                                         + bodyPart.getDisposition()
-                                        + ")");
+                                        + ") "
+                                        + String.format(
+                                                "[%.1f %s]",
+                                                bodyPart.getSize() >= 1024 * 1024
+                                                        ? (double) bodyPart.getSize()
+                                                                / (1024 * 1024)
+                                                        : (double) bodyPart.getSize() / 1024,
+                                                bodyPart.getSize() >= 1024 * 1024 ? "MB" : "kB"));
 
                         if (saveAttachments) {
                             if (!mailDir.exists()) {
@@ -340,14 +464,10 @@ class MailClient {
                             String filename =
                                     Paths.get(bodyPart.getFileName()).getFileName().toString();
                             File f = new File(mailDir, filename);
-
                             InputStream is = bodyPart.getInputStream();
-                            FileOutputStream fos = new FileOutputStream(f);
 
-                            byte[] buf = new byte[4096];
-                            int bytesRead;
-                            while ((bytesRead = is.read(buf)) != -1) {
-                                fos.write(buf, 0, bytesRead);
+                            try (FileOutputStream fos = new FileOutputStream(f)) {
+                                IOUtils.copy(is, fos);
                             }
                         }
                     } else if (bodyPart.isMimeType("multipart/alternative")) {
@@ -394,7 +514,10 @@ class MailClient {
             }
         }
 
-        inbox.close(false);
+        System.out.println("------------------------------------------------------------------");
+        if (inbox.isOpen()) {
+            inbox.close(false);
+        }
         store.close();
     }
 
@@ -587,7 +710,7 @@ class MailClient {
                     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH.mm.ss");
             final LocalDateTime localDateTime = LocalDateTime.parse(dt, formatter);
             final ZonedDateTime zonedDateTime =
-                    ZonedDateTime.of(localDateTime, ZoneId.of("Europe/Athens"));
+                    ZonedDateTime.of(localDateTime, ZoneId.systemDefault());
 
             return Date.from(zonedDateTime.toInstant());
         }

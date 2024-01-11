@@ -72,9 +72,33 @@ public class Main {
         filterOption.setRequired(false);
         options.addOption(filterOption);
 
+        Option folderOption = new Option("e", "folder", true, "Name of folder to open");
+        folderOption.setRequired(false);
+        options.addOption(folderOption);
+
+        Option old2newOption =
+                new Option(
+                        "o",
+                        "from-oldest",
+                        false,
+                        "Search messages from oldest to newest (combined with -l and/or -f)");
+        old2newOption.setRequired(false);
+        options.addOption(old2newOption);
+
+        Option reverseOption =
+                new Option(
+                        "i",
+                        "reverse",
+                        false,
+                        "Reverse the order of messages displayed (combined with -l and/or -f)");
+        reverseOption.setRequired(false);
+        options.addOption(reverseOption);
+
         Option option =
                 Option.builder("l")
-                        .desc("Limit the number of emails displayed to <N>")
+                        .desc(
+                                "Limit the number of emails displayed to <N>. \"all\" fetches all"
+                                        + " messages from server")
                         .longOpt("limit")
                         .hasArg()
                         .type(Number.class)
@@ -88,7 +112,7 @@ public class Main {
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
 
-        formatter.setWidth(100);
+        formatter.setWidth(110);
         formatter.setDescPadding(7);
         formatter.setLeftPadding(2);
         formatter.setSyntaxPrefix("Usage: ");
@@ -127,14 +151,34 @@ public class Main {
             mc = new MailClient("mailserver.properties");
 
             if (cmd.hasOption("l") || cmd.hasOption("f")) {
-                final int fetchNumber =
-                        cmd.hasOption("l")
-                                ? ((Number) cmd.getParsedOptionValue("l")).intValue()
-                                : 0;
+                int fetchNumber = Integer.MIN_VALUE;
+                if (cmd.hasOption("l")) {
+                    try {
+                        fetchNumber = ((Number) cmd.getParsedOptionValue("l")).intValue();
+                    } catch (ParseException pe) {
+                        final String parseError = pe.getMessage();
+                        final String parseErrorString =
+                                parseError.substring(
+                                        parseError.indexOf("\"") + 1, parseError.lastIndexOf("\""));
+                        if (!parseErrorString.equalsIgnoreCase("all")) {
+                            System.out.println("Invalid message limit " + parseErrorString);
+                            showHelpAndExit(formatter, options, 1);
+                        }
+                    }
+                }
                 final String mailFilter = cmd.getOptionValue("f");
                 final boolean saveAttachments = cmd.hasOption("d") ? true : false;
+                final boolean reverseOrder = cmd.hasOption("i") ? true : false;
+                final boolean old2new = cmd.hasOption("o") ? true : false;
+                final String folderName = cmd.getOptionValue("e");
 
-                mc.read(mailFilter, fetchNumber, saveAttachments);
+                mc.read(
+                        mailFilter,
+                        fetchNumber,
+                        saveAttachments,
+                        reverseOrder,
+                        old2new,
+                        folderName);
             } else {
                 final String recipient = cmd.getOptionValue("recipient");
                 final String cc = cmd.getOptionValue("cc", "");
@@ -151,13 +195,12 @@ public class Main {
             return;
         } catch (IOException | MessagingException ex) {
             ex.printStackTrace();
-        } catch (ParseException pe) {
-            System.out.println(
-                    "==> ParseException raised "
-                            + pe.getMessage().toLowerCase()
-                            + System.lineSeparator());
-            System.exit(1);
-            return;
-        }
+        } /* catch (ParseException pe) {
+              System.out.println(
+                      "==> ParseException raised "
+                              + pe.getMessage().toLowerCase());
+              System.exit(1);
+              return;
+          } */
     }
 }

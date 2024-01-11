@@ -9,7 +9,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URL;
 
-import javax.mail.*;
 import javax.net.ssl.HttpsURLConnection;
 
 public class FetchQuote {
