@@ -9,10 +9,10 @@ The JAR file packages all the requirements in a single executable (Java version 
 - E-mail credentials (**Username** & **Password**) are expected to be set in the form of environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
 - The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration properties and must be in the same location as the entry-point JAR file. The properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*).
 
-Example: ```$ java -jar mailapp-0.1.jar --help```
+Example: ```$ java -jar <mailapp jar file>.jar --help```
 ```terminal
-Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-r <arg>] [-l <arg>]
-       [-h]
+Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-e <arg>] [-o] [-i] [-r <arg>]
+       [-l <arg>] [-h]
 
 - Simple terminal-based email management wizard
 
@@ -22,8 +22,12 @@ Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-r 
   -a,--attachment=<arg>       Pass in zip file attachment
   -d,--download               Download all file attachments (combined with -l and/or -f)
   -f,--filter=<arg>           Expression-based message filtering
+  -e,--folder=<arg>           Name of folder to open
+  -o,--from-oldest            Search messages from oldest to newest (combined with -l and/or -f)
+  -i,--reverse                Reverse the order of messages displayed (combined with -l and/or -f)
   -r,--recipient=<arg>        Email recipient
-  -l,--limit=<arg>            Limit the number of emails displayed to <N>
+  -l,--limit=<arg>            Limit the number of emails displayed to <N>. "all" fetches all messages from
+                              server
   -h,--help                   Show this help message
 
 Version: 0.1
