@@ -1,49 +1,85 @@
-# jmailx
-## CLI application for basic e-mail management in Java
+# jmailx - CLI e-mail wizard in Java
 
-## Usage
+## Installation
+JRE version **1.8 or greater** is required. Unless you choose to build from source, running the standalone JAR file in the release section should suffice since all the requirements are bundled.
 
-The JAR file packages all the requirements in a single executable (Java version **1.8 or greater** is required).
+## Prerequisites
+- Personal e-mail credentials (**Username** & **Password**) are expected to be set as environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
+- The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration as well as other options (e.g., encoding, personal options) in the form of key-value pairs. These properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*).
 
-### Prerequisites
-- E-mail credentials (**Username** & **Password**) are expected to be set in the form of environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
-- The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration properties and must be in the same location as the entry-point JAR file. The properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*).
+## Getting Started
+The full list of options available is displayed below
 
-Example: ```$ java -jar <mailapp jar file>.jar --help```
+Example: ```$ java -jar jmailx-0.1.jar --help```
 ```terminal
-Usage: Mail App [-c <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-e <arg>] [-o] [-i] [-r <arg>]
-       [-l <arg>] [-h]
+Usage: jmailx-0.1 [-r <arg>] [-c <arg>] [-b <arg>] [-s <arg>] [-m <arg>] [-a <arg>] [-d] [-f <arg>] [-e <arg>] [-o] [-i]
+       [-l <arg>] [-p <arg>] [-v] [-h]
 
 - Simple terminal-based email management wizard
 
+  -r,--recipient=<arg>        Email recipients
   -c,--cc=<arg>               Add CC recipients
+  -b,--bcc=<arg>              Add BCC recipients
   -s,--subject=<arg>          Email subject
   -m,--message=<arg>          Email message or path to text file with message body
-  -a,--attachment=<arg>       Pass in zip file attachment
+  -a,--attachment=<arg>       Pass in attachment
   -d,--download               Download all file attachments (combined with -l and/or -f)
   -f,--filter=<arg>           Expression-based message filtering
   -e,--folder=<arg>           Name of folder to open
-  -o,--from-oldest            Search messages from oldest to newest (combined with -l and/or -f)
+  -o,--from-oldest            Fetch messages from oldest to newest (combined with -l and/or -f)
   -i,--reverse                Reverse the order of messages displayed (combined with -l and/or -f)
-  -r,--recipient=<arg>        Email recipient
-  -l,--limit=<arg>            Limit the number of emails displayed to <N>. "all" fetches all messages from
-                              server
-  -h,--help                   Show this help message
+  -l,--limit=<arg>            Limit the number of emails displayed to <N>. "all" fetches all messages from server
+  -p,--properties=<arg>       Path to the properties file, default "mailserver.properties"
 
-Version: 0.1
+  -v,--version                Show program version
+  -h,--help                   Show this help message
 ```
 ***
-### Sending an E-mail
-Issue the following command to send an email to `test@mail.com` with `subject="Hello"` and `message="World"`
-
-```$ java -jar <mailapp jar file>.jar -r test@mail.com -s 'Hello' -m 'World'```
+This utility offers 2 basic functionalities, **sending** e-mails and **viewing** e-mails received to your account.
 ***
-### Reading E-mails
-Retrieving and displaying e-mails from a folder can be done with the following command:
+### Sending an e-mail
+
+This is the most basic use case of this utility, enabling the user to send an email to a single recipient e.g., test@mail.com with `subject="Hello"` and `message="World"`
+
+```$ java -jar jmailx-0.1.jar -r test@mail.com -s 'Hello' -m 'World'```
+
+_Multiple recipients_ can also be specified, either as a collection of comma-separated addresses or by repeating an option, e.g., issue the following command to specify that the e-mail has 2 recipients, 
+test1@mail.com and test2@mail.com. 
+
+```$ java -jar jmailx-0.1.jar -r test1@mail.com -r test2@mail.com -c test3@mail.com```
+
+Notice that the CC option is also appended in this case, thus test3@mail.com will receive a carbon copy. The same principle applies if a user specifies the `cc` or `bcc` options, meaning that
+multiple CC/BCC recipients can be added. Also, you might notice how neither a subject nor any message was specified. If the user omits to specify a subject, the _default_ `Subject` will be used instead. If the message body is missing or empty, a random quote is sent from the [Quotable API](https://api.quotable.io).  
+
+The user can also specify any number of attachments to send along with the e-mail using the `-a` option, e.g., to attach a ZIP file (archive.zip). Naturally, the file attachment must point to a valid location. 
+```$ java -jar jmailx-0.1.jar -r test1@mail.com -a archive.zip```
+
+_Note_: If the message you want to send is relatively wordy, you can pass a text file in the `-m` option, e.g. ```$ java -jar <mailapp jar file>.jar -r test1@mail.com -m long_mail.txt```. The contents of the text file will be sent as the e-mail body.
+
+***
+### Listing e-mails
+The most straightforward way to retrieving and display your e-mails from a folder can be done with the following command:
 
 E.g. Issue the following command to fetch the latest 10 e-mails:
 
-```$ java -jar <mailapp jar file>.jar -l 10```
+```$ java -jar jmailx-0.1.jar -l 10```
+
+**E-mails are displayed one by one, and a prompt is given if there is more than one left to view. Follow the onscreen instructions to jump to the next e-mail or exit.**
+
+- Saving attachments found in e-mails can be performed by appending the `-d` option. Using this option creates a unique folder for each e-mail retrieved and stores any attachments inside. It's very common for e-mails to follow the
+`text/html` mimetype; if that's the case, the content of the e-mail is treated as an HTML attachment which is also downloaded when the option is specified.
+- Although the default folder to search for messages is 'INBOX' this option can be altered either via configuring the `mail.proto.inbox_name` property inside the `.properties` file or through the `-e` option.
+- The order the messages are displayed can also be adjusted using the `-i` option. Selecting this option will result in displaying the message in reverse chronological order (from oldest to newest)
+- The `-o` option is similar to `-i` (they can also be combined) since it also reverses the order, except that `-o` lists messages beginning from the oldest e-mails stored inside the folder in question. 
+
+#### Filtering engine
+The user can impose specific filters on messages that are going to be displayed using the `-f` or `--filter` option. This is achieved through a custom searching mechanism that filters certain terms, for instance, fetch all e-mails from folder that were sent after a certain date and also contain 'Meeting' as part of the subject. This process is translated to a simple expression-based filtering schema designed to combine multiple search terms. In a nutshell, the following terms can be used as search terms:
+
+- **body**: finds any messages that contain the following string/phrase inside the message body
+-  **subject**: finds any messages that contain the following string/phrase inside the subject
+-  **from**: finds any messages sent from this address. The address can either be any RFC822 address or even a personal name. Passing a personal name, e.g. 'John Smith', will attempt to fetch any messages that were sent from 'John Smith' assuming the personal name exists as part of the address. This implementation simplifies the search operation for the user. Naturally, simple addresses such as test3@mail.com are supported and addresses containing both personal and address information in the following format, e.g. John Smith <john.smith@domain.com>
+-  **number**: finds the message associated with the provided number
+-  **received**: finds any messages received at the exact timestamp. The timestamp format `"yyyy-MM-dd'T'HH.mm.ss"`
 ***
 ### Reading E-mails with custom filters
 E-mail filtering is also available through a custom filtering interface. The full list of filtering option is available at [?].
