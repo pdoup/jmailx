@@ -91,6 +91,8 @@ The user can impose specific filters on messages that are going to be displayed 
 -  **size_le**: finds any messages that have a total size less or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 2.5 megabytes: `size_ge:2.5mb`.
 - **flags**: finds any messages with the following flag. Flags are used to tag messages. Two built-in flags can be specified as values, `seen` and `flagged`. Custom tags can also be used if they are supported by the mail server.
 
+The search term and the associated value must be separated by `:`.
+
 _Note_: Negating an option is possible by prepending `!` before the value, for instance, to fetch all messages **not** containing 'Work' in the subject, issue the following statement: `subject:!Work`
 
 **Search terms can also be combined** using logical operators between them. To ensure 2 search terms coexist the user can join the options with a `+` symbol. Furthermore, to make sure either term is present the user can join the terms with the `|` symbol. The evaluation order is from left to right. For reasons of testing and clarity, a natural language translation mechanism was also developed that convert search strings to natural language. For example, consider the following complete search expression `"subject:hello+from:test@gmail.com|size_le:4kb"`. This is equivalent to `((subject contains "hello" and sender is "test@gmail.com") or size less than "4096" bytes)"`. For more examples and test cases visit the [test suite](./src/test/java/iti/mail) folder.  
