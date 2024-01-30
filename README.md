@@ -91,7 +91,7 @@ The user can impose specific filters on messages that are going to be displayed 
 -  **size_le**: finds any messages that have a total size less or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 2.5 megabytes: `size_ge:2.5mb`.
 - **flags**: finds any messages with the following flag. Flags are used to tag messages. Two built-in flags can be specified as values, `seen` and `flagged`. Custom tags can also be used if they are supported by the mail server.
 
-The search term and the associated value must be separated by `:`.
+**The search term and the associated value must be separated by `:`**.
 
 _Note_: Negating an option is possible by prepending `!` before the value, for instance, to fetch all messages **not** containing 'Work' in the subject, issue the following statement: `subject:!Work`
 
