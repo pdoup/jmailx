@@ -77,10 +77,22 @@ The user can impose specific filters on messages that are going to be displayed 
 
 - **body**: finds any messages that contain the following string/phrase inside the message body
 -  **subject**: finds any messages that contain the following string/phrase inside the subject
--  **from**: finds any messages sent from this address. The address can either be any RFC822 address or even a personal name. Passing a personal name, e.g. 'John Smith', will attempt to fetch any messages that were sent from 'John Smith' assuming the personal name exists as part of the address. This implementation simplifies the search operation for the user. Naturally, simple addresses such as test3@mail.com are supported and addresses containing both personal and address information in the following format, e.g. John Smith <john.smith@domain.com>
+-  **from**: finds any messages sent from this address. The address can either be any RFC822 address or even a personal name. Passing a personal name, e.g. 'John Smith', will attempt to fetch any messages that were sent from 'John Smith' assuming the personal name exists as part of the address. This implementation simplifies the search operation for the user. Naturally, simple addresses such as test3@mail.com are supported and addresses containing both personal and address information in the following format, e.g., `John Smith <john.smith@domain.com>`, to eliminate any ambiguity.
 -  **number**: finds the message associated with the provided number
--  **received**: finds any messages received at the exact timestamp. The timestamp format `"yyyy-MM-dd'T'HH.mm.ss"`
-***
+-  **received**: finds any messages received at the exact timestamp. The timestamp format must be the following `"yyyy-MM-dd'T'HH.mm.ss"`. E.g., to get all e-mails sent at 10:03:21 AM on 2023/05/20 the string format is `2023-05-20T10.03.21`. The timestamp adheres to the local timezone settings.
+-  **received_after**: finds any messages received after a timestamp. The date format is the same as `received` option.
+-  **received_before**: finds any messages received before a timestamp. The date format is the same as `received` option.
+-  **sent**: finds any messages received at the exact timestamp. This term is particularly useful when dealing with POP3 stores where the server does not store information regarding the date an e-mail was received. The functionality is the same as `received`.
+-  **sent_after**: finds any messages received after a timestamp. Same as `received_after` option.
+-  **sent_before**: finds any messages received before a timestamp. Same as `received_before` option.
+-  **to**: finds any messages sent to the following recipient. The value is an address following the same protocol as the `from` term above.
+-  **cc**: finds any messages that were CC'ed to the following address. The value is an address following the same protocol as the `from` term above.
+-  **size_ge**: finds any messages that have a total size greater or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 100 kilobytes: `size_ge:100kb`.
+-  **size_le**: finds any messages that have a total size less or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 2.5 megabytes: `size_ge:2.5mb`.
+- **flags**: finds any messages with the following flag. Flags are used to tag messages. Two built-in flags can be specified as values, `seen` and `flagged`. Custom tags can also be used if they are supported by the mail server.
+
+_Note_: Negating an option is possible by prepending `!` before the value, for instance to fetch all messages **not** containing 'Work' in the subject, issue the following statement: `subject:!Work`
+
 ### Reading E-mails with custom filters
 E-mail filtering is also available through a custom filtering interface. The full list of filtering option is available at [?].
 
