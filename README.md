@@ -1,7 +1,7 @@
 # jmailx - CLI e-mail wizard in Java
 
 ## Installation
-JRE version **1.8 or greater** is required. Unless you choose to build from source, running the standalone JAR file in the release section should suffice since all the requirements are bundled.
+JRE version **1.8 or greater** is required. Unless you choose to build from source, running the standalone JAR file found in the [releases](https://github.com/pdoup/jmailx/releases) section should suffice since all the requirements are bundled.
 
 ## Prerequisites
 - Personal e-mail credentials (**Username** & **Password**) are expected to be set as environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
