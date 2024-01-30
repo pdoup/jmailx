@@ -3,14 +3,15 @@ package iti.mail;
 
 import static org.jsoup.Jsoup.*;
 
+import iti.mail.search.PersonalFromTerm;
+import iti.mail.search.PersonalRecipientTerm;
+
 import org.apache.commons.cli.*;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
@@ -24,13 +25,21 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Scanner;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.activation.DataHandler;
-import javax.activation.DataSource;
 import javax.activation.FileDataSource;
 import javax.mail.*;
 import javax.mail.internet.AddressException;
@@ -44,12 +53,18 @@ import javax.mail.search.*;
 class MailClient {
 
     final String username;
-    final String password;
     final String sender;
     final Session session;
     final Properties prop;
 
     public static final int MAX_FILENAME_LENGTH = 150;
+    public static final int DEFAULT_NOOP_INTERVAL = 20;
+    public static final HashSet<String> allowedExtensions =
+            new HashSet<>(
+                    Arrays.asList(
+                            "zip", "jpeg", "jpg", "png", "gif", "bmp", "tar", "gz", "7z", "csv",
+                            "txt", "xls", "doc", "ppt", "jar", "py", "java", "yml", "mp4", "mp3",
+                            "pdf", "ogg", "sql", "toml", "tiff", "mov", "aac", "xml", "json"));
 
     /**
      * Constructs a new MailClient with the given configuration path.
@@ -59,28 +74,33 @@ class MailClient {
      */
     public MailClient(final String configPath) throws IOException {
         this.username = System.getenv("ITIMAIL");
-        this.password = System.getenv("ITIPASS");
-        if (this.username == null || this.password == null) {
-            throw new RuntimeException(
-                    "$ITIMAIL or $ITIPASS environment variables have not been set.");
+        if (this.username == null || System.getenv("ITIPASS") == null) {
+            throw new IllegalArgumentException(
+                    "$ITIMAIL and/or $ITIPASS environment variables have not been set.");
         }
 
         this.prop = new Properties();
-
         final InputStream input = new FileInputStream(configPath);
-        prop.load(input);
-
         if (input != null) {
+            this.prop.load(input);
+
+            final Pattern patternMail = Pattern.compile("^([^.]*(\\.(?!smtp|pop3|imap).*)?)$");
+            for (String name : this.prop.stringPropertyNames()) {
+                if (patternMail.matcher(name).matches()) {
+                    System.setProperty(name, this.prop.getProperty(name));
+                }
+            }
             input.close();
         }
 
-        this.sender = prop.getProperty("mail.proto.user");
+        this.sender = prop.getProperty("mail.proto.user", this.username);
         this.session =
                 Session.getInstance(
-                        prop,
+                        this.prop,
                         new javax.mail.Authenticator() {
                             protected PasswordAuthentication getPasswordAuthentication() {
-                                return new PasswordAuthentication(username, password);
+                                return new PasswordAuthentication(
+                                        username, System.getenv("ITIPASS"));
                             }
                         });
     }
@@ -100,16 +120,18 @@ class MailClient {
      * @param recipient the recipient of the email
      * @param subject the subject of the email
      * @param messageText the text of the message
-     * @param carbonCopy the carbon copy of the email
+     * @param carbonCopy any CC of the email
+     * @param blindCarbonCopy any BCC of the email
      * @throws MessagingException if a messaging error occurs
      */
     public void send(
             final String recipient,
             final String subject,
             final String messageText,
-            final String carbonCopy)
+            final String carbonCopy,
+            final String blindCarbonCopy)
             throws MessagingException {
-        send(recipient, subject, messageText, carbonCopy, null);
+        send(recipient, subject, messageText, carbonCopy, blindCarbonCopy, null);
     }
 
     /**
@@ -119,6 +141,7 @@ class MailClient {
      * @param subject the subject of the email
      * @param messageText the text of the message
      * @param carbonCopy the carbon copy of the email
+     * @param blindCarbonCopy any BCC of the email
      * @param attachmentPath the path to the attachment
      * @throws MessagingException if a messaging error occurs
      */
@@ -127,55 +150,112 @@ class MailClient {
             final String subject,
             final String messageText,
             final String carbonCopy,
+            final String blindCarbonCopy,
             final String attachmentPath)
             throws MessagingException {
+        final String HOME_DIR = System.getProperty("user.home");
 
         Message message = new MimeMessage(session);
         try {
-            message.setFrom(
+            final InternetAddress fromAddress =
                     new InternetAddress(
                             username + "@" + this.prop.getProperty("mail.proto.domain"),
-                            this.sender));
+                            this.sender);
+            message.setFrom(fromAddress);
+            fromAddress.validate();
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
+        } catch (AddressException ae) {
+            throw new AddressException("Invalid sender address", message.getFrom()[0].toString());
         }
 
         final InternetAddress[] recipients = InternetAddress.parse(recipient);
-        try {
-            message.setRecipients(Message.RecipientType.TO, recipients);
-        } catch (NullPointerException npe) {
-            throw new AddressException("`To` address field cannot be empty");
+        if (validateEmails(recipients)) {
+            try {
+                message.setRecipients(Message.RecipientType.TO, recipients);
+            } catch (NullPointerException npe) {
+                throw new AddressException("`To` address field cannot be empty");
+            }
+        } else {
+            throw new AddressException(
+                    "Invalid recipient address detected in recipients list",
+                    recipient.replaceAll("\\s*,\\s*", ", "));
         }
 
         if (!carbonCopy.isEmpty()) {
-            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(carbonCopy));
+            final InternetAddress[] ccs = InternetAddress.parse(carbonCopy);
+            if (validateEmails(ccs)) {
+                message.setRecipients(Message.RecipientType.CC, ccs);
+            } else {
+                throw new AddressException(
+                        "Invalid CC address detected in CC list",
+                        carbonCopy.replaceAll("\\s*,\\s*", ", "));
+            }
+        }
+
+        if (!blindCarbonCopy.isEmpty()) {
+            final InternetAddress[] bccs = InternetAddress.parse(blindCarbonCopy);
+            if (validateEmails(bccs)) {
+                message.setRecipients(Message.RecipientType.BCC, bccs);
+            } else {
+                throw new AddressException(
+                        "Invalid BCC address detected in BCC list",
+                        blindCarbonCopy.replaceAll("\\s*,\\s*", ", "));
+            }
         }
         message.setSubject(subject);
 
-        Multipart multipart = new MimeMultipart();
+        MimeMultipart multipart = new MimeMultipart("mixed");
 
         BodyPart messageBodyPart = new MimeBodyPart();
 
         final String messageContent = readFileOrString(messageText);
-        messageBodyPart.setText(messageContent == null ? "Placeholder" : messageContent);
+        messageBodyPart.setText(messageContent == null ? "" : messageContent);
         multipart.addBodyPart(messageBodyPart);
 
         if (attachmentPath != null && !attachmentPath.isEmpty()) {
-            File file = new File(attachmentPath);
-            if (file.exists() && !file.isDirectory() && getFileExtension(file).equals("zip")) {
-                messageBodyPart = new MimeBodyPart();
-                DataSource source = new FileDataSource(attachmentPath);
-                messageBodyPart.setDataHandler(new DataHandler(source));
-                messageBodyPart.setFileName(file.getName());
-                multipart.addBodyPart(messageBodyPart);
-            } else {
-                System.out.println("==> Invalid attachment. Please provide a valid zip file.");
-                return;
+            final List<String> attachments = Arrays.asList(attachmentPath.split("\\s*,\\s*"));
+            for (String attachment : attachments) {
+                attachment = attachment.trim();
+                if (attachment.startsWith("~")) {
+                    attachment = HOME_DIR + attachment.substring(1);
+                }
+                File file = new File(attachment);
+                final String ext = getFileExtension(file);
+                if (file.exists() && !file.isDirectory() && allowedExtensions.contains(ext)) {
+                    messageBodyPart = new MimeBodyPart();
+                    messageBodyPart.setDataHandler(new DataHandler(new FileDataSource(attachment)));
+                    messageBodyPart.setFileName(file.getName());
+                    if (isImage(file)) {
+                        messageBodyPart.setHeader("Content-ID", "<image>");
+                        messageBodyPart.setDisposition(MimeBodyPart.INLINE);
+                    } else {
+                        messageBodyPart.setHeader("Content-Transfer-Encoding", "base64");
+                        messageBodyPart.setDisposition(MimeBodyPart.ATTACHMENT);
+                    }
+                    multipart.addBodyPart(messageBodyPart);
+                } else {
+                    if (!file.exists()) {
+                        System.out.println("==> File " + file.getName() + " does not exist");
+                    } else if (file.isDirectory()) {
+                        System.out.println("==> File " + file.getName() + " is a directory");
+                    } else {
+                        System.out.println(
+                                "==> Invalid extension \"."
+                                        + ext
+                                        + "\"; available extensions: ["
+                                        + allowedExtensions.stream()
+                                                .map(s -> "\"" + s + "\"")
+                                                .collect(Collectors.joining(", "))
+                                        + "]");
+                    }
+                    return;
+                }
             }
         }
 
-        message.setContent(multipart, "text/plain");
-
+        message.setContent(multipart);
+        message.saveChanges();
         Transport.send(message);
 
         ZonedDateTime now = ZonedDateTime.now(ZoneId.systemDefault());
@@ -234,9 +314,20 @@ class MailClient {
             throws MessagingException, IOException {
         final String ANSI_RESET = "\u001B[0m";
         final String ANSI_UNDERLINE = "\u001B[4m";
+        final ScheduledExecutorService executorService =
+                Executors.newSingleThreadScheduledExecutor();
+        final Scanner scanner = new Scanner(System.in);
+        final int noop_interval =
+                Integer.parseUnsignedInt(
+                        prop.getProperty(
+                                "mail.noop_interval", String.valueOf(DEFAULT_NOOP_INTERVAL)));
 
-        final Store store = session.getStore(this.prop.getProperty("mail.proto.store_type"));
+        final Store store = session.getStore(this.prop.getProperty("mail.store.type"));
         store.connect();
+        if (!store.isConnected()) {
+            throw new IllegalStateException(
+                    "Connection to " + store.toString() + " cannot be established");
+        }
 
         final String folderName =
                 folder == null ? this.prop.getProperty("mail.proto.inbox_name") : folder.trim();
@@ -305,6 +396,7 @@ class MailClient {
         }
 
         if (messages.length == 0 || messages == null) {
+            scanner.close();
             if (inbox.isOpen()) {
                 inbox.close(false);
             }
@@ -319,7 +411,7 @@ class MailClient {
         for (int i = limit - 1; i >= 0; i--) {
             Message message = messages[i];
             System.out.println(
-                    "------------------------------------------------------------------");
+                    "----------------------------------------------------------------------------------");
             System.out.printf("%16s: %d%n", ANSI_UNDERLINE + "Email No" + ANSI_RESET, limit - i);
             System.out.printf(
                     "%16s: %.1f %s%n",
@@ -332,7 +424,7 @@ class MailClient {
                     "%16s: %s%n", ANSI_UNDERLINE + "Subject" + ANSI_RESET, message.getSubject());
             System.out.printf(
                     "%16s: %s%n",
-                    ANSI_UNDERLINE + "Sent" + ANSI_RESET,
+                    ANSI_UNDERLINE + "Date" + ANSI_RESET,
                     new SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss Z", Locale.getDefault())
                             .format(message.getSentDate()));
 
@@ -411,7 +503,7 @@ class MailClient {
                             .collect(Collectors.joining(" ")));
 
             System.out.println(
-                    "------------------------------------------------------------------");
+                    "----------------------------------------------------------------------------------");
 
             String mailId =
                     UUID.randomUUID().toString()
@@ -420,7 +512,12 @@ class MailClient {
                                     .getAddress()
                                     .replace("@", "_at_")
                             + "_"
-                            + message.getSubject().trim().toLowerCase().replaceAll("\\s+", "_");
+                            + message.getSubject()
+                                    .trim()
+                                    .toLowerCase()
+                                    .replaceAll("\\s+", "_")
+                                    .replaceAll("[^a-zA-Z0-9-_ ]", "")
+                                    .replaceAll("_+", "_");
             mailId =
                     mailId.length() >= MAX_FILENAME_LENGTH
                             ? mailId.substring(0, MAX_FILENAME_LENGTH)
@@ -432,21 +529,38 @@ class MailClient {
             Object content = message.getContent();
             if (content instanceof MimeMultipart) {
                 MimeMultipart multipart = (MimeMultipart) content;
-
+                boolean hasPlainText = false;
                 for (int j = 0; j < multipart.getCount(); j++) {
-                    BodyPart bodyPart = multipart.getBodyPart(j);
+                    MimeBodyPart bodyPart = (MimeBodyPart) multipart.getBodyPart(j);
 
                     if (bodyPart.isMimeType("text/plain")) {
+                        hasPlainText = true;
                         System.out.println("Content: " + bodyPart.getContent());
-                    } else if (bodyPart.isMimeType("text/html")) {
-                        final String htmlContent = parse(bodyPart.getContent().toString()).text();
-                        System.out.println("Content: " + htmlContent);
                     } else if (bodyPart.isMimeType("application/*")
-                            || bodyPart.isMimeType("image/*")) {
+                            || bodyPart.isMimeType("image/*")
+                            || bodyPart.isMimeType("text/html")) {
+                        if (bodyPart.isMimeType("text/html")) {
+                            if (hasPlainText) {
+                                System.out.println(
+                                        "\u001B[31m[Skipping displaying \"text/html\" content type]"
+                                                + ANSI_RESET);
+                            } else {
+                                final String htmlContent =
+                                        parse(bodyPart.getContent().toString()).text();
+                                System.out.println("Content: " + htmlContent);
+                            }
+                        }
+
+                        final ContentType attachmentCT = new ContentType(bodyPart.getContentType());
+                        final String attachmentName = bodyPart.getFileName();
                         System.out.println(
                                 "Content: "
-                                        + bodyPart.getContentType()
-                                        + " ("
+                                        + attachmentCT.getBaseType()
+                                        + "; name=\""
+                                        + attachmentName
+                                        + "\" encoding=\""
+                                        + bodyPart.getEncoding()
+                                        + "\" ("
                                         + bodyPart.getDisposition()
                                         + ") "
                                         + String.format(
@@ -461,32 +575,193 @@ class MailClient {
                             if (!mailDir.exists()) {
                                 mailDir.mkdirs();
                             }
-                            String filename =
-                                    Paths.get(bodyPart.getFileName()).getFileName().toString();
-                            File f = new File(mailDir, filename);
-                            InputStream is = bodyPart.getInputStream();
 
-                            try (FileOutputStream fos = new FileOutputStream(f)) {
-                                IOUtils.copy(is, fos);
-                            }
+                            final String bodyPartFilename =
+                                    attachmentName != null
+                                            ? attachmentName
+                                            : String.format("%s_%d.html", mailId, j);
+                            final String filename =
+                                    Paths.get(bodyPartFilename).getFileName().toString();
+                            bodyPart.saveFile(new File(mailDir, filename));
                         }
-                    } else if (bodyPart.isMimeType("multipart/alternative")) {
+                    } else if (bodyPart.isMimeType("multipart/*")) {
                         Object subContent = bodyPart.getContent();
                         if (subContent instanceof MimeMultipart) {
                             MimeMultipart subMultipart = (MimeMultipart) subContent;
+                            boolean hasPlainSubText = false;
                             for (int k = 0; k < subMultipart.getCount(); k++) {
                                 BodyPart subBodyPart = subMultipart.getBodyPart(k);
                                 if (subBodyPart.isMimeType("text/plain")) {
+                                    hasPlainSubText = true;
                                     System.out.println("Content: " + subBodyPart.getContent());
-                                } else if (subBodyPart.isMimeType("text/html")) {
+                                } else if (subBodyPart.isMimeType("text/html")
+                                        && !hasPlainSubText) {
                                     final String subHtmlBodyContent =
                                             parse(subBodyPart.getContent().toString())
                                                     .body()
                                                     .text();
                                     System.out.println("Content: " + subHtmlBodyContent);
-                                } else {
+                                } else if (subBodyPart.isMimeType("multipart/*")) {
+                                    Object subInnerContent = subBodyPart.getContent();
+                                    if (subInnerContent instanceof MimeMultipart) {
+                                        MimeMultipart subMultiInnerpart =
+                                                (MimeMultipart) subInnerContent;
+                                        boolean hasPlainSubInnerText = false;
+                                        for (int p = 0; p < subMultiInnerpart.getCount(); p++) {
+                                            BodyPart subBodyInnerPart =
+                                                    subMultiInnerpart.getBodyPart(p);
+                                            if (subBodyInnerPart.isMimeType("text/plain")) {
+                                                hasPlainSubInnerText = true;
+                                                System.out.println(
+                                                        "Content: "
+                                                                + subBodyInnerPart.getContent());
+                                            } else if (subBodyInnerPart.isMimeType("text/html")) {
+
+                                                final ContentType htmlContentType =
+                                                        new ContentType("text/html");
+                                                final String attachmentNameInner =
+                                                        subBodyInnerPart.getFileName();
+
+                                                if (hasPlainSubInnerText) {
+                                                    System.out.println(
+                                                            "\u001B[31m[Skipping displaying nested"
+                                                                    + " \"text/html\" content type]"
+                                                                    + ANSI_RESET);
+                                                } else {
+                                                    final String subHtmlBodyInnerContent =
+                                                            parse(
+                                                                            subBodyInnerPart
+                                                                                    .getContent()
+                                                                                    .toString())
+                                                                    .body()
+                                                                    .text();
+                                                    System.out.println(
+                                                            "Content: " + subHtmlBodyInnerContent);
+                                                }
+
+                                                System.out.println(
+                                                        "Content: "
+                                                                + htmlContentType.getBaseType()
+                                                                + "; name=\""
+                                                                + attachmentNameInner
+                                                                + "\" encoding=\""
+                                                                + ((MimeBodyPart) subBodyInnerPart)
+                                                                        .getEncoding()
+                                                                + "\" ("
+                                                                + subBodyInnerPart.getDisposition()
+                                                                + ") "
+                                                                + String.format(
+                                                                        "[%.1f %s]",
+                                                                        subBodyInnerPart.getSize()
+                                                                                        >= 1024
+                                                                                                * 1024
+                                                                                ? (double)
+                                                                                                subBodyInnerPart
+                                                                                                        .getSize()
+                                                                                        / (1024
+                                                                                                * 1024)
+                                                                                : (double)
+                                                                                                subBodyInnerPart
+                                                                                                        .getSize()
+                                                                                        / 1024,
+                                                                        subBodyInnerPart.getSize()
+                                                                                        >= 1024
+                                                                                                * 1024
+                                                                                ? "MB"
+                                                                                : "kB"));
+
+                                                if (saveAttachments) {
+                                                    if (!mailDir.exists()) {
+                                                        mailDir.mkdirs();
+                                                    }
+
+                                                    final String bodyPartFilenameInner =
+                                                            String.format(
+                                                                    "%s_inner_%d.html", mailId, p);
+                                                    final String filenameInner =
+                                                            Paths.get(bodyPartFilenameInner)
+                                                                    .getFileName()
+                                                                    .toString();
+                                                    ((MimeBodyPart) subBodyInnerPart)
+                                                            .saveFile(
+                                                                    new File(
+                                                                            mailDir,
+                                                                            filenameInner));
+                                                }
+                                            } else {
+                                                final ContentType innerBodyPartContentType =
+                                                        new ContentType(
+                                                                subBodyInnerPart.getContentType());
+
+                                                System.out.println(
+                                                        "\u001B[31m[Skipping displaying nested \""
+                                                                + innerBodyPartContentType
+                                                                        .getBaseType()
+                                                                + "\" content type]"
+                                                                + ANSI_RESET);
+                                            }
+                                        }
+                                    }
+                                } else if (subBodyPart.isMimeType("application/*")
+                                        || subBodyPart.isMimeType("image/*")
+                                        || subBodyPart.isMimeType("text/html")) {
+                                    if (subBodyPart.isMimeType("text/html")) {
+                                        if (hasPlainSubText) {
+                                            System.out.println(
+                                                    "\u001B[31m[Skipping displaying nested"
+                                                            + " \"text/html\" content type]"
+                                                            + ANSI_RESET);
+                                        } else {
+                                            final String innerHtmlContent =
+                                                    parse(subBodyPart.getContent().toString())
+                                                            .text();
+                                            System.out.println("Content: " + innerHtmlContent);
+                                        }
+                                    }
+
+                                    final ContentType subAttachmentCT =
+                                            new ContentType(subBodyPart.getContentType());
+                                    final String subAttachmentName = subBodyPart.getFileName();
                                     System.out.println(
-                                            "Content-Type: " + subBodyPart.getContentType());
+                                            "Content: "
+                                                    + subAttachmentCT.getBaseType()
+                                                    + "; name=\""
+                                                    + subAttachmentName
+                                                    + "\" encoding=\""
+                                                    + ((MimeBodyPart) subBodyPart).getEncoding()
+                                                    + "\" ("
+                                                    + subBodyPart.getDisposition()
+                                                    + ") "
+                                                    + String.format(
+                                                            "[%.1f %s]",
+                                                            subBodyPart.getSize() >= 1024 * 1024
+                                                                    ? (double) subBodyPart.getSize()
+                                                                            / (1024 * 1024)
+                                                                    : (double) subBodyPart.getSize()
+                                                                            / 1024,
+                                                            subBodyPart.getSize() >= 1024 * 1024
+                                                                    ? "MB"
+                                                                    : "kB"));
+
+                                    if (saveAttachments) {
+                                        if (!mailDir.exists()) {
+                                            mailDir.mkdirs();
+                                        }
+
+                                        final String subBodyPartFilename =
+                                                subAttachmentName != null
+                                                        ? subAttachmentName
+                                                        : String.format(
+                                                                "%s_inner_%d.html", mailId, k);
+                                        final String subFilename =
+                                                Paths.get(subBodyPartFilename)
+                                                        .getFileName()
+                                                        .toString();
+                                        ((MimeBodyPart) subBodyPart)
+                                                .saveFile(new File(mailDir, subFilename));
+                                    }
+                                } else {
+                                    continue;
                                 }
                             }
                         } else {
@@ -494,7 +769,7 @@ class MailClient {
                                     "Inner Body Content-Type: " + bodyPart.getContentType());
                         }
                     } else {
-                        System.out.println("Content-Type: " + bodyPart.getContentType());
+                        System.out.println("Body Part Content-Type: " + bodyPart.getContentType());
                     }
                 }
             } else if (contentType.getPrimaryType().equals("text")) {
@@ -505,16 +780,49 @@ class MailClient {
                     System.out.println("Content: " + htmlContent);
                 } else {
                     System.out.println(
-                            "Unable to print content-type: " + contentType.getBaseType());
+                            "Unable to display Content for text Sub-Type: "
+                                    + contentType.getSubType());
                 }
             } else {
                 System.out.println(
-                        "Unable to get the contents of message with Content-Type: "
+                        "Unable to get the Content of message with Content-Type: "
                                 + contentType.getBaseType());
+            }
+            if (limit > 1) {
+                System.out.println(
+                        "----------------------------------------------------------------------------------");
+                System.out.printf("==> Showing message [%d/%d] ", limit - i, limit);
+                if (i > 0) {
+                    String input;
+                    ScheduledFuture<?> future =
+                            executorService.scheduleAtFixedRate(
+                                    () -> {
+                                        store.isConnected();
+                                    },
+                                    0,
+                                    noop_interval,
+                                    TimeUnit.SECONDS);
+                    do {
+                        System.out.print("- Press enter to view next message (type 'q' to exit): ");
+                        input = scanner.nextLine();
+                    } while (!(input.equalsIgnoreCase("q") || input.isEmpty()));
+
+                    future.cancel(true);
+
+                    if (input.equalsIgnoreCase("q")) {
+                        break;
+                    }
+                } else {
+                    System.out.print(System.lineSeparator());
+                    break;
+                }
             }
         }
 
-        System.out.println("------------------------------------------------------------------");
+        System.out.println(
+                "----------------------------------------------------------------------------------");
+        executorService.shutdown();
+        scanner.close();
         if (inbox.isOpen()) {
             inbox.close(false);
         }
@@ -561,6 +869,38 @@ class MailClient {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Returns true if the file is an image file, false otherwise.
+     *
+     * @param file the file to check
+     * @return true if the file is an image file, false otherwise
+     */
+    static boolean isImage(final File file) {
+        final String[] imageExtensions = {"jpg", "png", "gif", "bmp", "jpeg"};
+        final String fileExtension = getFileExtension(file);
+        return Stream.of(imageExtensions).anyMatch(ext -> ext.equalsIgnoreCase(fileExtension));
+    }
+
+    /**
+     * Validates an array of InternetAddress objects.
+     *
+     * @param emails An array of InternetAddress objects to be validated.
+     * @return true if all email addresses are valid, false otherwise.
+     * @throws AddressException if the email address parsing fails.
+     */
+    static boolean validateEmails(final InternetAddress[] emails) {
+        return Arrays.stream(emails)
+                .allMatch(
+                        email -> {
+                            try {
+                                email.validate();
+                                return true;
+                            } catch (AddressException e) {
+                                return false;
+                            }
+                        });
     }
 
     static class MailFilter {
@@ -628,7 +968,21 @@ class MailClient {
                         st = new SubjectTerm(value);
                         break;
                     case "from":
-                        st = new FromTerm(new InternetAddress(value));
+                        InternetAddress fromAddr = new InternetAddress();
+                        try {
+                            fromAddr = InternetAddress.parse(value.replaceAll(",", ""))[0];
+                            fromAddr.validate();
+                            st = new FromTerm(fromAddr);
+                        } catch (AddressException ae) {
+                            try {
+                                fromAddr.setPersonal(value.trim());
+                                st = new PersonalFromTerm(fromAddr);
+                            } catch (UnsupportedEncodingException uee) {
+                                throw new IllegalArgumentException(
+                                        "==> Illegal argument:" + uee.getMessage());
+                            }
+                        }
+
                         break;
                     case "number":
                         st = new MessageNumberTerm(Integer.parseInt(value));
@@ -652,19 +1006,13 @@ class MailClient {
                         st = new SentDateTerm(DateTerm.LE, prepareZonedDate(value));
                         break;
                     case "to":
-                        st =
-                                new RecipientTerm(
-                                        Message.RecipientType.TO, new InternetAddress(value));
+                        st = prepareRecipientTerm(Message.RecipientType.TO, value);
                         break;
                     case "cc":
-                        st =
-                                new RecipientTerm(
-                                        Message.RecipientType.CC, new InternetAddress(value));
+                        st = prepareRecipientTerm(Message.RecipientType.CC, value);
                         break;
                     case "bcc":
-                        st =
-                                new RecipientTerm(
-                                        Message.RecipientType.BCC, new InternetAddress(value));
+                        st = prepareRecipientTerm(Message.RecipientType.BCC, value);
                         break;
                     case "size_ge":
                         st = new SizeTerm(SizeTerm.GE, fileToBytes(value));
@@ -690,7 +1038,7 @@ class MailClient {
                     default:
                         throw new IllegalArgumentException("Unknown field: " + field);
                 }
-            } catch (AddressException | NumberFormatException e) {
+            } catch (NumberFormatException e) {
                 e.printStackTrace();
             }
 
@@ -749,6 +1097,24 @@ class MailClient {
             }
         }
 
+        static SearchTerm prepareRecipientTerm(
+                final Message.RecipientType rt, final String recipient) {
+            InternetAddress recipientAddress = new InternetAddress();
+
+            try {
+                recipientAddress = InternetAddress.parse(recipient.replaceAll(",", ""))[0];
+                recipientAddress.validate();
+                return new RecipientTerm(rt, recipientAddress);
+            } catch (AddressException ae) {
+                try {
+                    recipientAddress.setPersonal(recipient.trim());
+                    return new PersonalRecipientTerm(rt, recipientAddress);
+                } catch (UnsupportedEncodingException uee) {
+                    throw new IllegalArgumentException("==> Illegal argument:" + uee.getMessage());
+                }
+            }
+        }
+
         /**
          * Converts a SearchTerm into a string representation. The string representation depends on
          * the type of the SearchTerm.
@@ -780,6 +1146,9 @@ class MailClient {
             } else if (term instanceof FromTerm) {
                 FromTerm fromTerm = (FromTerm) term;
                 return "sender is \"" + fromTerm.getAddress().toString() + "\"";
+            } else if (term instanceof PersonalFromTerm) {
+                PersonalFromTerm personalFromTerm = (PersonalFromTerm) term;
+                return "sender is \"" + personalFromTerm.getPersonalName().get() + "\"";
             } else if (term instanceof MessageNumberTerm) {
                 MessageNumberTerm messageNumberTerm = (MessageNumberTerm) term;
                 return "message number is \"" + messageNumberTerm.getNumber() + "\"";
@@ -817,6 +1186,25 @@ class MailClient {
                         return "cc sent to \"" + recipientTerm.getAddress().toString() + "\"";
                     case "Bcc":
                         return "bcc sent to \"" + recipientTerm.getAddress().toString() + "\"";
+                    default:
+                        return "";
+                }
+            } else if (term instanceof PersonalRecipientTerm) {
+                PersonalRecipientTerm personalRecipientTerm = (PersonalRecipientTerm) term;
+                final String recipientType = personalRecipientTerm.getRecipientType().toString();
+                switch (recipientType) {
+                    case "To":
+                        return "recipient is \""
+                                + personalRecipientTerm.getPersonalName().get()
+                                + "\"";
+                    case "Cc":
+                        return "cc sent to \""
+                                + personalRecipientTerm.getPersonalName().get()
+                                + "\"";
+                    case "Bcc":
+                        return "bcc sent to \""
+                                + personalRecipientTerm.getPersonalName().get()
+                                + "\"";
                     default:
                         return "";
                 }

@@ -25,14 +25,26 @@ public class TestMailApp {
 
         assertEquals("Search strings are not equal!", expectedOutput, output);
     }
-    
+
+    @Test
+    public void testPersonalNameFilterMatch() {
+        final SearchTerm mf = MailFilter.parse("from:Mark Williams|to:John Doe|cc:Adam Smith");
+
+        final String expectedOutput =
+                "((sender is \"Mark Williams\" or recipient is \"John Doe\") or cc sent to \"Adam"
+                    + " Smith\")";
+        final String output = MailFilter.toString(mf);
+
+        assertEquals("Search strings are not equal!", expectedOutput, output);
+    }
+
     @Test
     public void testFlagFilterMatch() {
         final SearchTerm mf = MailFilter.parse("flag:starred|flag:!seen");
 
         final String expectedOutput = "(flag \"starred\" set or flag \"Seen\" not set)";
         final String output = MailFilter.toString(mf);
-        
+
         System.out.println(output);
         assertEquals("Search strings with flag are not equal!", expectedOutput, output);
     }
@@ -41,12 +53,12 @@ public class TestMailApp {
     public void testFileExtension() {
         final File exampleFile = new File("/path/to/archive.zip");
         final File exampleFilename = new File("archive.zip");
-        
+
         final String expectedOutput = "zip";
-        
+
         final String outputFile = getFileExtension(exampleFile);
         final String outputFilename = getFileExtension(exampleFilename);
-            
+
         assertEquals("File extension mismatch!", expectedOutput, outputFile);
         assertEquals("File extension mismatch!", expectedOutput, outputFilename);
     }

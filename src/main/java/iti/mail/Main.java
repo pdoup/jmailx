@@ -1,27 +1,105 @@
 /** This class represents the main entry point of the application. */
 package iti.mail;
 
+import static java.net.URLDecoder.*;
+
 import org.apache.commons.cli.*;
+import org.apache.commons.io.FilenameUtils;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Optional;
 
 import javax.mail.*;
+import javax.mail.internet.AddressException;
 
 public class Main {
 
-    /** The version of the application. */
-    static final String VERSION = "0.1";
+    /** The default mail server confifuration file with the connection details */
+    static final String confFile = "mailserver.properties";
 
+    /**
+     * Prints the help message and exits the program.
+     *
+     * @param name The name of the command line application.
+     * @param formatter The HelpFormatter object used to print the help message.
+     * @param options The Options object containing the command line options.
+     * @param exitCode The exit code to use when terminating the program.
+     */
     static final void showHelpAndExit(
-            final HelpFormatter formatter, final Options options, final int exitCode) {
+            final String name,
+            final HelpFormatter formatter,
+            final Options options,
+            final int exitCode) {
         formatter.printHelp(
-                "Mail App",
+                name,
                 "\n- Simple terminal-based email management wizard\n\n",
                 options,
-                "\nVersion: " + VERSION + System.lineSeparator(),
+                System.lineSeparator(),
                 true);
         System.exit(exitCode);
         return;
+    }
+
+    /**
+     * Retrieves the name and version of the current JAR file.
+     *
+     * @return The base name of the path of the JAR file or empty if encoding exception occurs.
+     */
+    static String getJarNameVersion() {
+        try {
+            final String path =
+                    decode(
+                            Main.class
+                                    .getProtectionDomain()
+                                    .getCodeSource()
+                                    .getLocation()
+                                    .getPath(),
+                            StandardCharsets.UTF_8.name());
+            return FilenameUtils.getBaseName(path);
+        } catch (UnsupportedEncodingException uee) {
+            return "javax-null";
+        }
+    }
+
+    /**
+     * Returns the absolute path of the properties file.
+     *
+     * @param filePath The path of the file as a string.
+     * @return The absolute path of the properties file.
+     * @throws IOException If the file does not exist, is a directory, or read permissions are
+     *     missing. If the file does not exist, the method suggests supplying a configuration file
+     *     as a command-line argument using the "-p" option or ensuring the presence of a
+     *     "mailserver.properties" file in the same directory as the JAR file.
+     */
+    static String getAbsolutePropertiesPath(final String filePath) throws IOException {
+        if (filePath != null) {
+            final Path path = Paths.get(filePath);
+            if (Files.exists(path)) {
+                if (Files.isReadable(path) && !Files.isDirectory(path)) {
+                    return path.toAbsolutePath().toString();
+                } else {
+                    throw new IOException(
+                            "Properties file \""
+                                    + path.getFileName()
+                                    + "\" is a directory or read permissions are missing");
+                }
+            } else {
+                throw new IOException(
+                        "Properties file \""
+                                + path.getFileName()
+                                + "\" does not exist. Either supply a configuration file as a"
+                                + " command-line argument using the \"-p\" option or ensure the"
+                                + " presence of a \"mailserver.properties\" file in the same"
+                                + " directory as the JAR file");
+            }
+        } else {
+            return getAbsolutePropertiesPath(confFile);
+        }
     }
 
     /**
@@ -31,15 +109,21 @@ public class Main {
      */
     public static void main(String[] args) {
         MailClient mc = null;
-
         Options options = new Options();
 
-        Option recipientOption = new Option("r", "recipient", true, "Email recipient");
+        final String jarName = getJarNameVersion();
+
+        Option recipientOption = new Option("r", "recipient", true, "Email recipients");
         recipientOption.setRequired(false);
+        options.addOption(recipientOption);
 
         Option ccOption = new Option("c", "cc", true, "Add CC recipients");
         ccOption.setRequired(false);
         options.addOption(ccOption);
+
+        Option bccOption = new Option("b", "bcc", true, "Add BCC recipients");
+        bccOption.setRequired(false);
+        options.addOption(bccOption);
 
         Option subjectOption = new Option("s", "subject", true, "Email subject");
         subjectOption.setRequired(false);
@@ -54,8 +138,7 @@ public class Main {
         messageOption.setRequired(false);
         options.addOption(messageOption);
 
-        Option attachmentOption =
-                new Option("a", "attachment", true, "Pass in zip file attachment");
+        Option attachmentOption = new Option("a", "attachment", true, "Pass in attachment");
         attachmentOption.setRequired(false);
         options.addOption(attachmentOption);
 
@@ -81,7 +164,7 @@ public class Main {
                         "o",
                         "from-oldest",
                         false,
-                        "Search messages from oldest to newest (combined with -l and/or -f)");
+                        "Fetch messages from oldest to newest (combined with -l and/or -f)");
         old2newOption.setRequired(false);
         options.addOption(old2newOption);
 
@@ -103,16 +186,27 @@ public class Main {
                         .hasArg()
                         .type(Number.class)
                         .build();
-
-        options.addOption(recipientOption);
         options.addOption(option);
 
+        Option propertiesOption =
+                new Option(
+                        "p",
+                        "properties",
+                        true,
+                        "Path to the properties file, default \""
+                                + confFile
+                                + "\""
+                                + System.lineSeparator());
+        propertiesOption.setRequired(false);
+        options.addOption(propertiesOption);
+
+        options.addOption("v", "version", false, "Show program version");
         options.addOption("h", "help", false, "Show this help message");
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
 
-        formatter.setWidth(110);
+        formatter.setWidth(120);
         formatter.setDescPadding(7);
         formatter.setLeftPadding(2);
         formatter.setSyntaxPrefix("Usage: ");
@@ -128,27 +222,35 @@ public class Main {
             cmd = parser.parse(options, args, true);
         } catch (ParseException e) {
             System.out.println(e.getMessage());
-            showHelpAndExit(formatter, options, 1);
+            showHelpAndExit(jarName, formatter, options, 1);
         }
 
-        if (cmd.hasOption("h") || cmd.getOptions().length == 0 || cmd.getArgs().length > 0) {
-            showHelpAndExit(formatter, options, 0);
+        if (cmd.hasOption("h")
+                || cmd.hasOption("v")
+                || cmd.getOptions().length == 0
+                || cmd.getArgs().length > 0) {
+            if (cmd.hasOption("v") && !cmd.hasOption("h")) {
+                System.out.println(jarName);
+                return;
+            } else {
+                showHelpAndExit(jarName, formatter, options, 0);
+            }
         } else if (cmd.hasOption("r")) {
             if (cmd.hasOption("l") || cmd.hasOption("f")) {
                 System.out.println(
                         "Error: If 'recipient' is present, neither 'filter' nor 'fetch' should be"
                                 + " present.");
-                showHelpAndExit(formatter, options, 1);
+                showHelpAndExit(jarName, formatter, options, 1);
             }
         } else if (!(cmd.hasOption("f") || cmd.hasOption("l"))) {
             System.out.println(
                     "Error: If 'recipient' is not present, at least one of 'fetch' or 'filter' must"
                             + " be present.");
-            showHelpAndExit(formatter, options, 1);
+            showHelpAndExit(jarName, formatter, options, 1);
         }
 
         try {
-            mc = new MailClient("mailserver.properties");
+            mc = new MailClient(getAbsolutePropertiesPath(cmd.getOptionValue(propertiesOption)));
 
             if (cmd.hasOption("l") || cmd.hasOption("f")) {
                 int fetchNumber = Integer.MIN_VALUE;
@@ -162,7 +264,7 @@ public class Main {
                                         parseError.indexOf("\"") + 1, parseError.lastIndexOf("\""));
                         if (!parseErrorString.equalsIgnoreCase("all")) {
                             System.out.println("Invalid message limit " + parseErrorString);
-                            showHelpAndExit(formatter, options, 1);
+                            showHelpAndExit(jarName, formatter, options, 1);
                         }
                     }
                 }
@@ -180,27 +282,51 @@ public class Main {
                         old2new,
                         folderName);
             } else {
-                final String recipient = cmd.getOptionValue("recipient");
-                final String cc = cmd.getOptionValue("cc", "");
-                final String subject = cmd.getOptionValue("subject", "Test Subject");
-                final String attachmentPath = cmd.getOptionValue("attachment");
+                final String recipients = String.join(",", cmd.getOptionValues(recipientOption));
+
+                final String cc =
+                        Optional.ofNullable(cmd.getOptionValues("cc"))
+                                .map(addr -> String.join(",", addr))
+                                .orElse("");
+
+                final String bcc =
+                        Optional.ofNullable(cmd.getOptionValues(bccOption))
+                                .map(addr -> String.join(",", addr))
+                                .orElse("");
+
+                final String subject = cmd.getOptionValue("subject", "Subject");
+
+                final String attachments =
+                        Optional.ofNullable(cmd.getOptionValues("attachment"))
+                                .map(attc -> String.join(",", attc))
+                                .orElse(null);
 
                 String messageText = cmd.getOptionValue("message");
                 messageText = messageText == null ? FetchQuote.getQuote() : messageText;
 
-                mc.send(recipient, subject, messageText, cc, attachmentPath);
+                mc.send(recipients, subject, messageText, cc, bcc, attachments);
             }
         } catch (AuthenticationFailedException af) {
             System.out.println("==> " + "(" + mc.getUsername() + ") " + af.getMessage());
             return;
-        } catch (IOException | MessagingException ex) {
+        } catch (IllegalStateException ise) {
+            System.out.println("==> " + ise.getMessage());
+            return;
+        } catch (AddressException ae) {
+            System.out.printf("==> %s: [%s]%n", ae.getLocalizedMessage(), ae.getRef());
+            return;
+        } catch (IOException ioe) {
+            System.out.println("==> IOError: " + ioe.getLocalizedMessage());
+            return;
+        } catch (NoSuchProviderException nsp) {
+            System.out.println(
+                    "==> Error in properties file: " + "[" + nsp.getLocalizedMessage() + "]");
+            return;
+        } catch (IllegalArgumentException iae) {
+            System.out.println("==> " + iae.getLocalizedMessage());
+            return;
+        } catch (MessagingException ex) {
             ex.printStackTrace();
-        } /* catch (ParseException pe) {
-              System.out.println(
-                      "==> ParseException raised "
-                              + pe.getMessage().toLowerCase());
-              System.exit(1);
-              return;
-          } */
+        }
     }
 }
