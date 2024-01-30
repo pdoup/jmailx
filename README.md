@@ -58,13 +58,13 @@ _Note_: If the message you want to send is relatively wordy, you can pass a text
 
 ***
 ### Listing e-mails
-The most straightforward way to retrieving and display your e-mails from a folder can be done with the following command:
+The most straightforward way to retrieve and display your e-mails from a folder can be done with the following command:
 
 E.g. Issue the following command to fetch the latest 10 e-mails:
 
 ```$ java -jar jmailx-0.1.jar -l 10```
 
-**E-mails are displayed one by one, and a prompt is given if there is more than one left to view. Follow the onscreen instructions to jump to the next e-mail or exit.**
+**E-mails are displayed one by one and a prompt is given if there is more than one left to view. Follow the onscreen instructions to jump to the next e-mail or exit.**
 
 - Saving attachments found in e-mails can be performed by appending the `-d` option. Using this option creates a unique folder for each e-mail retrieved and stores any attachments inside. It's very common for e-mails to follow the
 `text/html` mimetype; if that's the case, the content of the e-mail is treated as an HTML attachment which is also downloaded when the option is specified.
@@ -95,15 +95,17 @@ _Note_: Negating an option is possible by prepending `!` before the value, for i
 
 **Search terms can also be combined** using logical operators between them. To ensure 2 search terms coexist the user can join the options with a `+` symbol. Furthermore, to make sure either term is present the user can join the terms with the `|` symbol. The evaluation order is from left to right. For reasons of testing and clarity, a natural language translation mechanism was also developed that convert search strings to natural language. For example, consider the following complete search expression `"subject:hello+from:test@gmail.com|size_le:4kb"`. This is equivalent to `((subject contains "hello" and sender is "test@gmail.com") or size less than "4096" bytes)"`. For more examples and test cases visit the [test suite](./src/test/java/iti/mail) folder.  
 
+**Search terms can be repeated** multiple times with different values using the logical operators introduced above. For example, you can enforce that an e-mail must have the following two CC recipients (test1@mail.com and test2@mail.com) in order to be shown by issuing the following expression: `"cc:test1@mail.com+cc:test2@mail.com"`. Similarly, you can experiment with other terms as well as logical operators that suit your needs.
+
 This filter option `-f` can also be used in conjunction with the rest of the pertinent options, mainly: `-l`, `-o`, `-i`, `-d`, and `-e`.
 
 ## Build from scratch
-You can also build this project from scratch with the provided [build.gradle](build.gradle) file as follows:
+You can also build this project and generate the JAR file from scratch using the provided [build.gradle](build.gradle) file as follows (after cloning the repository):
 
 ```sh
 $ gradle clean build --no-daemon
 ```
 ***
-## License
 
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
