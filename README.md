@@ -1,4 +1,4 @@
-# jmail
+# jmailx
 ## CLI application for basic e-mail management in Java
 
 ## Usage
