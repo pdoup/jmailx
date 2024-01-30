@@ -5,7 +5,7 @@ JRE version **1.8 or greater** is required. Unless you choose to build from sour
 
 ## Prerequisites
 - Personal e-mail credentials (**Username** & **Password**) are expected to be set as environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
-- The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration as well as other options (e.g., encoding, personal options) in the form of key-value pairs. These properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*).
+- The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration as well as other options (e.g., encoding, personal options) in the form of key-value pairs. These properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*). You may also create your very own custom properties file and pass it to the main program using the `-p` option, following the blueprint above. 
 
 ## Getting Started
 The full list of options available is displayed below
@@ -93,16 +93,9 @@ The user can impose specific filters on messages that are going to be displayed 
 
 _Note_: Negating an option is possible by prepending `!` before the value, for instance, to fetch all messages **not** containing 'Work' in the subject, issue the following statement: `subject:!Work`
 
-**Search terms can also be combined** using logical operators between them. To ensure 2 search terms coexist the user can join the options with a `+` symbol. Furthermore, to make sure either term is present the user can join the terms with the `|` symbol. The evaluation order is from left to right. For reasons of testing and clarity, a natural language translation mechanism was also developed that convert search strings to natural language. For example, consider the following complete search expression `"subject:hello+from:test@gmail.com|size_le:4kb"`. This is equivalent to `((subject contains "hello" and sender is "test@gmail.com") or size less than "4096" bytes)"`. More examples and test cases are available as part of the [test suite](./src/test/java/iti/mail).  
+**Search terms can also be combined** using logical operators between them. To ensure 2 search terms coexist the user can join the options with a `+` symbol. Furthermore, to make sure either term is present the user can join the terms with the `|` symbol. The evaluation order is from left to right. For reasons of testing and clarity, a natural language translation mechanism was also developed that convert search strings to natural language. For example, consider the following complete search expression `"subject:hello+from:test@gmail.com|size_le:4kb"`. This is equivalent to `((subject contains "hello" and sender is "test@gmail.com") or size less than "4096" bytes)"`. For more examples and test cases visit the [test suite](./src/test/java/iti/mail) folder.  
 
-
-### Reading E-mails with custom filters
-E-mail filtering is also available through a custom filtering interface. The full list of filtering option is available at [?].
-
-E.g. Issue the following command to filter any e-mails sent from `example@mail.com` and these e-mails were sent after `2023-10-01 10:00:00` or subject contains the phrase `'hello'`:
-
-```$ java -jar <mailapp jar file>.jar -f 'from:example@mail.com+sent_after:2023-10-01T10.00.00|subject:hello'```
-***
+This filter option `-f` can also be used in conjunction with the rest of the pertinent options, mainly: `-l`, `-o`, `-i`, `-d`, and `-e`.
 
 ## Build from scratch
 You can also build this project from scratch with the provided [build.gradle](build.gradle) file as follows:
