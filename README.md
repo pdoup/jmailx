@@ -4,7 +4,7 @@
 JRE version **1.8 or above** is required. Unless you choose to build from source, running the standalone JAR file found in the [releases](https://github.com/pdoup/jmailx/releases) section should suffice since all the requirements are bundled.
 
 ## Prerequisites
-- Personal e-mail credentials (**Username** & **Password**) are expected to be set as environment variables, `$ITIMAIL` and `$ITIPASS` respectively.
+- Personal e-mail credentials (**Username** & **Password**) are expected to be set as environment variables, `ITIMAIL` and `ITIPASS` respectively.
 - The [`mailserver.properties`](mailserver.properties) file contains important mail server configuration as well as other options (e.g., encoding, personal options) in the form of key-value pairs. These properties can be altered accordingly to match the target server specifications (e.g. protocol selection: *POP3*, *IMAP*). You may also create your very own custom properties file and pass it to the main program using the `-p` option, following the blueprint above. 
 
 ## Getting Started
