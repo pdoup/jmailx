@@ -57,7 +57,7 @@ The user can also specify any number of attachments to send along with the e-mai
 
 _Note_: If the body part of the e-mail is particularly lengthy, the user may pass a regular text file in the `-m` option, e.g.,
 
-```$ java -jar <mailapp jar file>.jar -r test1@mail.com -m long_mail.txt```. The contents of the text file are encoded and placed inside the e-mail body part.
+```$ java -jar jmailx-0.1.jar -r test1@mail.com -m long_mail.txt```. The contents of the text file are encoded and placed inside the e-mail body part.
 
 ***
 ### Listing e-mails
@@ -90,7 +90,7 @@ The user can impose specific filters on messages that are going to be displayed 
 - **to**: finds any messages sent to the following recipient. The value is an address following the same protocol as the `from` term above.
 - **cc**: finds any messages that were CC'ed to the following address. The value is an address following the same protocol as the `from` term above.
 - **size_ge**: finds any messages that have a total size greater or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 100 kilobytes: `size_ge:100kb`.
-- **size_le**: finds any messages that have a total size less or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails greater than 2.5 megabytes: `size_ge:2.5mb`.
+- **size_le**: finds any messages that have a total size less or equal to the following value. The value can be any real non-negative number followed by the unit (kb or mb). Example for e-mails less or equal to 2.5 megabytes: `size_le:2.5mb`.
 - **flags**: finds any messages with the following flag. Flags are used to tag messages. Two built-in flags can be specified as values, `seen` and `flagged`. Custom tags can also be used if they are supported by the mail server.
 
 **The search term and the associated value must be separated by `:`**.
