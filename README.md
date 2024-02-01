@@ -104,12 +104,14 @@ to fetch all messages **not** containing the term 'Work' in the subject part, is
 
 This filter option `-f` can also be used in conjunction with the rest of the pertinent options, mainly: `-l`, `-o`, `-i`, `-d`, and `-e`.
 
-## Build from scratch
+## Build from scratch 🛠️
 You can also build this project and generate the JAR file from scratch using the provided [build.gradle](build.gradle) file as follows (after cloning the repository):
 
 ```sh
 $ gradle clean build --no-daemon
 ```
+
+A minimum JDK version of **1.8** is required + Gradle must be installed for the build to complete.
 
 Compiling from source will also run all the test cases and generate a report file.
 ***
