@@ -57,8 +57,9 @@ The user can also specify any number of attachments to send along with the e-mai
 
 _Note_: If the body part of the e-mail is particularly lengthy, the user may pass a regular text file in the `-m` option, e.g.,
 
-```$ java -jar jmailx-0.1.jar -r test1@mail.com -m long_mail.txt```. The contents of the text file are encoded and placed inside the e-mail body part.
+```$ java -jar jmailx-0.1.jar -r test1@mail.com -m long_mail.txt```
 
+The contents of the text file are encoded and placed inside the e-mail body part.
 ***
 ### Listing e-mails
 The most straightforward way to retrieve and display your e-mails from a folder can be performed using the following command:
