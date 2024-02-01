@@ -768,6 +768,40 @@ class MailClient {
                             System.out.println(
                                     "Inner Body Content-Type: " + bodyPart.getContentType());
                         }
+                    } else if (bodyPart.isMimeType("message/rfc822")) {
+                        final ContentType rfc822AttachmentCT =
+                                new ContentType(bodyPart.getContentType());
+                        final String rfc822AttachmentName = bodyPart.getFileName();
+                        System.out.println(
+                                "Content: "
+                                        + rfc822AttachmentCT.getBaseType()
+                                        + "; name=\""
+                                        + rfc822AttachmentName
+                                        + "\" encoding=\""
+                                        + ((MimeBodyPart) bodyPart).getEncoding()
+                                        + "\" ("
+                                        + bodyPart.getDisposition()
+                                        + ") "
+                                        + String.format(
+                                                "[%.1f %s]",
+                                                bodyPart.getSize() >= 1024 * 1024
+                                                        ? (double) bodyPart.getSize()
+                                                                / (1024 * 1024)
+                                                        : (double) bodyPart.getSize() / 1024,
+                                                bodyPart.getSize() >= 1024 * 1024 ? "MB" : "kB"));
+                        if (saveAttachments) {
+                            if (!mailDir.exists()) {
+                                mailDir.mkdirs();
+                            }
+
+                            final String rfc822BodyPartFilename =
+                                    rfc822AttachmentName != null
+                                            ? rfc822AttachmentName.replace(' ', '_')
+                                            : String.format("%s_%d.eml", mailId, j);
+                            final String rfc822Filename =
+                                    Paths.get(rfc822BodyPartFilename).getFileName().toString();
+                            bodyPart.saveFile(new File(mailDir, rfc822Filename));
+                        }
                     } else {
                         System.out.println("Body Part Content-Type: " + bodyPart.getContentType());
                     }
